@@ -1,67 +1,41 @@
-const fs = require('fs'); // fsモジュールをインポート
+const fs = require('fs').promises; // fsモジュールをPromise形式でインポート
 
-// グローバルにアイテムとカテゴリの配列を定義
-let items = [];
-let categories = [];
+let items = []; // アイテムを格納する配列
+let categories = []; // カテゴリを格納する配列
 
-// initialize関数
-function initialize() {
-    return new Promise((resolve, reject) => {
-        // items.jsonファイルを読み込む
-        fs.readFile('./data/items.json', 'utf8', (err, data) => {
-            if (err) {
-                return reject("unable to read items file"); // エラー時にreject
-            }
-            items = JSON.parse(data); // JSONを配列に変換
+// initialize()関数でitem.jsonからデータを読み込む
+async function initialize() {
+    try {
+        const data = await fs.readFile('./data/items.json', 'utf8'); // items.jsonのデータを読み込む
+        items = JSON.parse(data); // JSONをパースしてitemsに格納
 
-            // categories.jsonファイルを読み込む
-            fs.readFile('./data/categories.json', 'utf8', (err, data) => {
-                if (err) {
-                    return reject("unable to read categories file"); // エラー時にreject
-                }
-                categories = JSON.parse(data); // JSONを配列に変換
-
-                resolve(); // 成功時にresolve
-            });
-        });
-    });
+        const categoriesData = await fs.readFile('./data/categories.json', 'utf8'); // categories.jsonのデータを読み込む
+        categories = JSON.parse(categoriesData); // JSONをパースしてcategoriesに格納
+    } catch (error) {
+        console.error('Error reading data:', error);
+        throw error; // エラーが発生したらthrow
+    }
 }
 
-// getAllItems関数
-function getAllItems() {
-    return new Promise((resolve, reject) => {
-        if (items.length === 0) {
-            return reject("no results returned"); // アイテムがない場合にreject
-        }
-        resolve(items); // アイテムをresolve
-    });
+// publishedがtrueのアイテムを取得
+async function getPublishedItems() {
+    return items.filter(item => item.published); // publishedがtrueのアイテムをフィルタリング
 }
 
-// getPublishedItems関数
-function getPublishedItems() {
-    return new Promise((resolve, reject) => {
-        const publishedItems = items.filter(item => item.published); // publishedがtrueのアイテムをフィルター
-        if (publishedItems.length === 0) {
-            return reject("no results returned"); // アイテムがない場合にreject
-        }
-        resolve(publishedItems); // 公開アイテムをresolve
-    });
+// すべてのアイテムを取得
+async function getAllItems() {
+    return items; // すべてのアイテムを返す
 }
 
-// getCategories関数
-function getCategories() {
-    return new Promise((resolve, reject) => {
-        if (categories.length === 0) {
-            return reject("no results returned"); // カテゴリがない場合にreject
-        }
-        resolve(categories); // カテゴリをresolve
-    });
+// カテゴリを取得
+async function getCategories() {
+    return categories; // カテゴリを返す
 }
 
 // モジュールとしてエクスポート
 module.exports = {
     initialize,
-    getAllItems,
     getPublishedItems,
+    getAllItems,
     getCategories
 };
