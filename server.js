@@ -322,7 +322,7 @@ app.get('/categories', async (req, res) => {
 });
 
 app.get('/', (req, res) => {
-    res.send('<h1>Welcome to the Shop!</h1><p><a href="/shop">Go to Shop</a></p><p><a href="/items">View All Items</a></p><p><a href="/categories">View Categories</a></p><p><a href="/about">About Us</a></p>');
+    res.redirect('/about');
 });
 
 // Aboutページを追加
