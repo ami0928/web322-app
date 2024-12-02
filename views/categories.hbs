@@ -1,0 +1,41 @@
+<h2>Categories</h2>
+<a href="/categories/add" class="btn btn-success pull-right">Add Category</a>
+
+<div class="row">
+    <div class="col-md-12">
+        <h2>Categories</h2>
+        <hr />
+
+        <!-- カテゴリがない場合にメッセージを表示 -->
+        {{#unless categories}}
+            <div class="col-md-12 text-center">
+                <strong>{{message}}</strong>  <!-- メッセージの表示 -->
+            </div>
+        {{else}}
+            <!-- テーブルの表示 -->
+            <div class="table-responsive">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Category ID</th>
+                            <th>Category Name</th>
+                            <th></th>  <!-- 削除ボタン用の新しいカラム -->
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {{#each categories}}
+                            <tr>
+                                <td><a href="/items?category={{this.id}}">{{this.id}}</a></td> <!-- カテゴリIDをクリックでリダイレクト -->
+                                <td><a href="/items?category={{this.id}}">{{this.category}}</a></td> <!-- カテゴリ名をクリックでリダイレクト -->
+                                <td>
+                                    <!-- 削除ボタン（リンク） -->
+                                    <a href="/categories/delete/{{this.id}}" class="btn btn-danger">Remove</a>
+                                </td>
+                            </tr>
+                        {{/each}}
+                    </tbody>
+                </table>
+            </div>
+        {{/unless}}
+    </div>
+</div>

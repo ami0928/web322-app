@@ -1,3 +1,8 @@
 body {
-    background-color: rgba(251, 251, 49, 0.782);
+  background-color: rgba(251, 251, 49, 0.782); /* 色の指定は正しい */
+}
+
+nav ul li.active a {
+  font-weight: bold;
+  color: #f00;  /* 赤色で強調 */
 }

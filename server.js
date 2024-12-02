@@ -1,12 +1,12 @@
 /*********************************************************************************
 
-WEB322 – Assignment 03
+WEB322 – Assignment 04
 I declare that this assignment is my own work in accordance with Seneca Academic Policy. No part
 of this assignment has been copied manually or electronically from any other source (including 3rd party web sites) or distributed to other students.
 
 Name: Ami Yamada 
 Student ID: 159621226 
-Date: Oct.9th
+Date: Nov.21
 Cyclic Web App URL: https://replit.com/@amiyamada0928/web322-app
 GitHub Repository URL: https://github.com/ami0928/web322-app__________
 
@@ -22,6 +22,15 @@ const upload = multer();
 const cloudinary = require('cloudinary').v2;
 const streamifier = require('streamifier');
 const router = express.Router();
+const exphbs = require('express-handlebars');
+const expressHandlebars = require('express-handlebars');
+const handlebars = expressHandlebars.create().handlebars;
+const storeService = require('./store-service'); 
+
+app.use(express.urlencoded({ extended: true }));
+
+app.engine('.hbs', exphbs.engine({ extname: '.hbs' }));
+app.set('view engine', '.hbs');
 
 cloudinary.config({
     cloud_name: 'dwffbl9mq',
@@ -30,8 +39,17 @@ cloudinary.config({
     secure: true
 });
 
+app.use(function(req, res, next) {
+    let route = req.path.substring(1); // パスの最初のスラッシュを削除
+    // ルートにカテゴリIDが含まれている場合、それを除去
+    app.locals.activeRoute = "/" + (isNaN(route.split('/')[1]) ? route.replace(/\/(?!.*)/, "") : route.replace(/\/(.*)/, ""));
+    // クエリパラメータの category を保存
+    app.locals.viewingCategory = req.query.category;
+    next();
+});
 // アイテムを追加するPOSTリクエストを処理
-router.post('/items/add', upload.single('featureImage'), (req, res) => {
+router.post('/add', (req, res) => {
+    // 画像がアップロードされる場合の処理
     if (req.file) {
         let streamUpload = (req) => {
             return new Promise((resolve, reject) => {
@@ -54,24 +72,27 @@ router.post('/items/add', upload.single('featureImage'), (req, res) => {
         }
 
         upload(req).then((uploaded) => {
+            // Cloudinaryへのアップロード後、画像URLを取得
             processItem(uploaded.secure_url);
         }).catch((error) => {
             console.error("Error uploading to Cloudinary:", error);
             res.status(500).send("Error uploading image.");
         });
     } else {
-        processItem(""); // 画像がない場合は空のURLを渡す
+        // 画像がない場合は空のURLを渡す
+        processItem("");
     }
 
     function processItem(imageUrl) {
-        req.body.featureImage = imageUrl;
+        req.body.featureImage = imageUrl; // 画像URLを設定
 
-        // 新しいアイテムをデータベースに追加する処理
-        const newItem = new Item(req.body); // req.bodyをもとに新しいアイテムを作成
+        // アイテムをデータベースに保存
+        const newItem = new Item(req.body); // req.bodyから新しいアイテムを作成
 
-        newItem.save() // データベースに保存
+        newItem.save() // アイテムを保存
             .then(() => {
-                res.redirect('/items'); // アイテムの一覧ページにリダイレクト
+                // アイテムが追加された後、リダイレクト
+                res.redirect('/items');
             })
             .catch((error) => {
                 console.error("Error saving item to database:", error);
@@ -80,9 +101,23 @@ router.post('/items/add', upload.single('featureImage'), (req, res) => {
     }
 });
 
+router.get('/items/delete/:id', (req, res) => {
+    const postId = req.params.id;
+
+    storeService.deletePostById(postId)
+        .then(() => {
+            res.redirect('/items'); // 削除後にアイテム一覧ページにリダイレクト
+        })
+        .catch((error) => {
+            console.error("ポスト削除エラー:", error);
+            res.status(500).send("ポストの削除に失敗しました / ポストが見つかりません");
+        });
+});
+
+
 // データファイルのパスを設定
-const itemsFilePath = './data/items.json';
-const categoriesFilePath = './data/categories.json';
+const itemsFilePath = './items.json';
+const categoriesFilePath = './categories.json';
 
 let items = [];
 let categories = [];
@@ -169,45 +204,121 @@ function addItem(newItem) {
 }
 
 // ルート設定
-app.get('/shop', async (req, res) => {
+app.get("/shop", async (req, res) => {
+    // Declare an object to store properties for the view
+    let viewData = {};
+  
     try {
-        const items = await getPublishedItems();
-        let itemsHTML = '<h1>Shop Items</h1><ul>';
-        items.forEach(item => {
-            itemsHTML += `<li>${item.title} - $${item.price} <img src="${item.featureImage}" alt="${item.title}"></li>`;
-        });
-        itemsHTML += '</ul>';
-        res.send(itemsHTML);
-    } catch (error) {
-        console.error('Error retrieving shop items:', error);
-        res.status(500).send('Error retrieving shop items.');
+      // declare empty array to hold "item" objects
+      let items = [];
+  
+      // if there's a "category" query, filter the returned items by category
+      if (req.query.category) {
+        // Obtain the published "item" by category
+        items = await itemData.getPublishedItemsByCategory(req.query.category);
+      } else {
+        // Obtain the published "items"
+        items = await itemData.getPublishedItems();
+      }
+  
+      // sort the published items by itemDate
+      items.sort((a, b) => new Date(b.itemDate) - new Date(a.itemDate));
+  
+      // get the latest item from the front of the list (element 0)
+      let item = items[0];
+  
+      // store the "items" and "item" data in the viewData object (to be passed to the view)
+      viewData.items = items;
+      viewData.item = item;
+    } catch (err) {
+      viewData.message = "no results";
     }
-});
+  
+    try {
+      // Obtain the full list of "categories"
+      let categories = await itemData.getCategories();
+  
+      // store the "categories" data in the viewData object (to be passed to the view)
+      viewData.categories = categories;
+    } catch (err) {
+      viewData.categoriesMessage = "no results";
+    }
+  
+    // render the "shop" view with all of the data (viewData)
+    res.render("shop", { data: viewData });
+  });
 
-app.get('/items', async (req, res) => {
+  app.get('/shop/:id', async (req, res) => {
+
+    // Declare an object to store properties for the view
+    let viewData = {};
+  
+    try{
+  
+        // declare empty array to hold "item" objects
+        let items = [];
+  
+        // if there's a "category" query, filter the returned items by category
+        if(req.query.category){
+            // Obtain the published "items" by category
+            items = await itemData.getPublishedItemsByCategory(req.query.category);
+        }else{
+            // Obtain the published "items"
+            items = await itemData.getPublishedItems();
+        }
+  
+        // sort the published items by itemDate
+        items.sort((a,b) => new Date(b.itemDate) - new Date(a.itemDate));
+  
+        // store the "items" and "item" data in the viewData object (to be passed to the view)
+        viewData.items = items;
+  
+    }catch(err){
+        viewData.message = "no results";
+    }
+  
+    try{
+        // Obtain the item by "id"
+        viewData.item = await itemData.getItemById(req.params.id);
+    }catch(err){
+        viewData.message = "no results"; 
+    }
+  
+    try{
+        // Obtain the full list of "categories"
+        let categories = await itemData.getCategories();
+  
+        // store the "categories" data in the viewData object (to be passed to the view)
+        viewData.categories = categories;
+    }catch(err){
+        viewData.categoriesMessage = "no results"
+    }
+  
+    // render the "shop" view with all of the data (viewData)
+    res.render("shop", {data: viewData})
+  });
+  
+
+  app.get('/items', async (req, res) => {
     try {
         let filteredItems;
 
         if (req.query.category) {
-            // カテゴリによるフィルタリング
             filteredItems = await getItemsByCategory(req.query.category);
         } else if (req.query.minDate) {
-            // 最小日付によるフィルタリング
             filteredItems = await getItemsByMinDate(req.query.minDate);
         } else {
-            // フィルターなしで全アイテムを取得
             filteredItems = await getAllItems();
         }
 
-        let itemsHTML = '<h1>All Items</h1><ul>';
-        filteredItems.forEach(item => {
-            itemsHTML += `<li>${item.title} - $${item.price} <img src="${item.featureImage}" alt="${item.title}"></li>`;
-        });
-        itemsHTML += '</ul>';
-        res.send(itemsHTML);
+        if (filteredItems.length > 0) {
+            res.render("items", { items: filteredItems });
+        } else {
+            res.render("items", { message: "no results" });
+        }
     } catch (error) {
         console.error('Error retrieving items:', error);
-        res.status(500).send('Error retrieving items.');
+        res.render("items", { message: "no results" });
     }
 });
 
@@ -269,7 +380,7 @@ function getItemsByMinDate(minDateStr) {
 
 
 app.get('/items/add', (req, res) => {
-    res.sendFile(path.join(__dirname, 'views', 'addItem.html')); // 'addItem.html'のパスを指定
+    res.render('addPost'); 
 });
 
 // アイテムを追加するPOSTリクエストを処理
@@ -307,19 +418,20 @@ app.post('/items/add', upload.single('featureImage'), async (req, res) => {
 
 app.get('/categories', async (req, res) => {
     try {
-        const categories = await getAllCategories();
-        console.log('Fetched categories:', categories); 
-        let categoriesHTML = '<h1>Categories</h1><ul>';
-        categories.forEach(category => {
-            categoriesHTML += `<li>${category.category}</li>`;
-        });
-        categoriesHTML += '</ul>';
-        res.send(categoriesHTML);
+        const allCategories = await getAllCategories();
+
+        if (allCategories.length > 0) {
+            res.render("categories", { categories: allCategories });
+        } else {
+            res.render("categories", { message: "no results" });
+        }
     } catch (error) {
         console.error('Error retrieving categories:', error);
-        res.status(500).send('Error retrieving categories.');
+        res.render("categories", { message: "no results" });
     }
 });
+
+
 
 app.get('/', (req, res) => {
     res.redirect('/about');
@@ -327,7 +439,7 @@ app.get('/', (req, res) => {
 
 // Aboutページを追加
 app.get('/about', (req, res) => {
-    res.sendFile(path.join(__dirname, 'views', 'about.html')); // 'about.html'のパスを指定
+    res.render('about');
 });
 
 // サーバーを起動し、データの初期化を行う
@@ -337,4 +449,92 @@ initialize().then(() => {
     });
 }).catch(error => {
     console.error('Error initializing data:', error);
+});
+
+
+handlebars.registerHelper('equal', function (lvalue, rvalue, options) {
+    if (arguments.length < 3)
+        throw new Error("Handlebars Helper equal needs 2 parameters");
+    if (lvalue != rvalue) {
+        return options.inverse(this);
+    } else {
+        return options.fn(this);
+    }
+});
+
+// `navLink` ヘルパーを登録
+handlebars.registerHelper('navLink', function (url, options) {
+    return (
+        '<li class="nav-item"><a ' +
+        (url == app.locals.activeRoute
+            ? ' class="nav-link active"'
+            : ' class="nav-link"') +
+        ' href="' +
+        url +
+        '">' +
+        options.fn(this) +
+        "</a></li>"
+    );
+});
+
+app.use((req, res, next) => {
+    res.status(404).render('404');  // 404.hbsを表示
+});
+
+app.get('/', (req, res) => {
+    res.redirect('/shop');
+});
+
+const hbs = exphbs.create({
+    helpers: {
+        formatDate: function(dateObj) {
+            let year = dateObj.getFullYear();
+            let month = (dateObj.getMonth() + 1).toString();
+            let day = dateObj.getDate().toString();
+            return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+        }
+    }
+});
+
+app.get('/items/add', (req, res) => {
+    res.render("addItem"); // "addItem.hbs" を表示
+});
+
+// 新規ルート /categories/add
+app.get('/categories/add', (req, res) => {
+    res.render("addCategory"); // "addCategory.hbs" を表示
+});
+
+app.post('/categories/add', (req, res) => {
+    const categoryData = req.body;  // フォームから送信されたデータを取得
+    storeService.addCategory(categoryData)  // store-serviceのaddCategory関数を呼び出し
+        .then(() => {
+            res.redirect('/categories');  // カテゴリーの一覧ページへリダイレクト
+        })
+        .catch(err => {
+            res.status(500).send("Unable to create category: " + err);  // エラーメッセージを表示
+        });
+});
+
+
+app.get('/categories/delete/:id', (req, res) => {
+    const categoryId = req.params.id;  // URLパラメータからカテゴリーIDを取得
+    storeService.deleteCategoryById(categoryId)  // store-serviceのdeleteCategoryById関数を呼び出し
+        .then(() => {
+            res.redirect('/categories');  // 削除後、カテゴリー一覧ページへリダイレクト
+        })
+        .catch(err => {
+            res.status(500).send("Unable to remove category / Category not found");  // エラーメッセージを表示
+        });
+});
+
+app.get('/Items/delete/:id', (req, res) => {
+    const itemId = req.params.id;  // URLパラメータからアイテムIDを取得
+    storeService.deleteItemById(itemId)  // store-serviceのdeleteItemById関数を呼び出し
+        .then(() => {
+            res.redirect('/Items');  // 削除後、アイテム一覧ページへリダイレクト
+        })
+        .catch(err => {
+            res.status(500).send("Unable to remove item / Item not found");  // エラーメッセージを表示
+        });
 });

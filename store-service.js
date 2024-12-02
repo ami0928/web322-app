@@ -1,61 +1,221 @@
-const fs = require('fs').promises; // fsモジュールをPromise形式でインポート
+const Sequelize = require('sequelize');
+const sequelize = new Sequelize('database', 'user', 'password', {
+    host: 'host',
+    dialect: 'postgres',
+    port: 5432,
+    dialectOptions: {
+        ssl: { rejectUnauthorized: false }
+    },
+    query: { raw: true }
+});
 
-let items = []; // アイテムを格納する配列
-let categories = []; // カテゴリを格納する配列
 
-// initialize()関数でitem.jsonからデータを読み込む
-async function initialize() {
-    try {
-        const data = await fs.readFile('./data/items.json', 'utf8'); // items.jsonのデータを読み込む
-        items = JSON.parse(data); // JSONをパースしてitemsに格納
 
-        const categoriesData = await fs.readFile('./data/categories.json', 'utf8'); // categories.jsonのデータを読み込む
-        categories = JSON.parse(categoriesData); // JSONをパースしてcategoriesに格納
-    } catch (error) {
-        console.error('Error reading data:', error);
-        throw error; // エラーが発生したらthrow
-    }
-}
+// Item モデル
+const Item = sequelize.define('Item', {
+    body: Sequelize.TEXT,
+    title: Sequelize.STRING,
+    postDate: Sequelize.DATE,
+    featureImage: Sequelize.STRING,
+    published: Sequelize.BOOLEAN,
+    price: Sequelize.DOUBLE,
+    category: Sequelize.INTEGER  // 外部キーとしてカテゴリーIDを格納
+});
 
-// publishedがtrueのアイテムを取得
-async function getPublishedItems() {
-    return items.filter(item => item.published); // publishedがtrueのアイテムをフィルタリング
-}
+// Category モデル
+const Category = sequelize.define('Category', {
+    category: Sequelize.STRING
+});
 
-// すべてのアイテムを取得
-async function getAllItems() {
-    return items; // すべてのアイテムを返す
-}
+// リレーションシップの設定
+Item.belongsTo(Category, { foreignKey: 'category', targetKey: 'id' });
 
-// カテゴリを取得
-async function getCategories() {
-    return categories; // カテゴリを返す
-}
 
-// アイテムを追加する関数
-async function addItem(itemData) {
+function deletePostById(id) {
     return new Promise((resolve, reject) => {
-        // publishedが未定義の場合はfalseに設定
-        itemData.published = (itemData.published !== undefined) ? true : false;
-
-        // idをitems配列の長さ+1に設定
-        itemData.id = items.length + 1;
-
-        // items配列に新しいアイテムを追加
-        items.push(itemData);
-
-        // items.jsonにデータを保存
-        fs.writeFile('./data/items.json', JSON.stringify(items, null, 2))
-            .then(() => resolve(itemData))
-            .catch(reject); // 書き込みエラーをreject
+        Post.destroy({
+            where: { id: id }
+        })
+        .then(result => {
+            if (result === 0) { // No post found with the given ID
+                reject("Post not found");
+            } else {
+                resolve("Post deleted successfully");
+            }
+        })
+        .catch(error => {
+            reject(error); // Reject promise if an error occurs
+        });
     });
 }
-
-// モジュールとしてエクスポート
-module.exports = {
-    initialize,
-    getPublishedItems,
-    getAllItems,
-    getCategories,
-    addItem // addItem関数をエクスポート
+// initialize関数
+module.exports.initialize = () => {
+    return new Promise((resolve, reject) => {
+        sequelize.sync()
+            .then(() => resolve('Database synced successfully.'))
+            .catch(err => reject('Unable to sync the database: ' + err));
+    });
 };
+
+// getAllItems関数
+module.exports.getAllItems = () => {
+    return new Promise((resolve, reject) => {
+        Item.findAll()
+            .then(data => resolve(data))
+            .catch(() => reject('No results returned.'));
+    });
+};
+
+// getItemsByCategory関数
+module.exports.getItemsByCategory = (category) => {
+    return new Promise((resolve, reject) => {
+        Item.findAll({ where: { category: category } })
+            .then(data => resolve(data))
+            .catch(() => reject('No results returned.'));
+    });
+};
+
+// getItemsByMinDate関数
+module.exports.getItemsByMinDate = (minDateStr) => {
+    const { gte } = Sequelize.Op;
+    return new Promise((resolve, reject) => {
+        Item.findAll({
+            where: {
+                postDate: {
+                    [gte]: new Date(minDateStr)
+                }
+            }
+        })
+            .then(data => resolve(data))
+            .catch(() => reject('No results returned.'));
+    });
+};
+
+// getItemById関数
+module.exports.getItemById = (id) => {
+    return new Promise((resolve, reject) => {
+        Item.findAll({ where: { id: id } })
+            .then(data => resolve(data[0]))
+            .catch(() => reject('No results returned.'));
+    });
+};
+
+// addItem関数
+module.exports.addItem = (itemData) => {
+    return new Promise((resolve, reject) => {
+        itemData.published = itemData.published ? true : false;
+        for (let prop in itemData) {
+            if (itemData[prop] === '') {
+                itemData[prop] = null;
+            }
+        }
+        itemData.postDate = new Date();
+
+        // もしcategory名が渡されている場合、そのIDを取得して設定
+        if (itemData.category) {
+            Category.findOne({ where: { category: itemData.category } })
+                .then(category => {
+                    if (category) {
+                        itemData.category = category.id; // IDに変換
+                        Item.create(itemData)
+                            .then(() => resolve('Item successfully created.'))
+                            .catch(err => reject(`Unable to create item: ${err.message}`));
+                    } else {
+                        reject("Category not found.");
+                    }
+                })
+                .catch(err => reject('Error fetching category: ' + err.message));
+        } else {
+            Item.create(itemData)
+                .then(() => resolve('Item successfully created.'))
+                .catch(err => reject(`Unable to create item: ${err.message}`));
+        }
+    });
+};
+
+// getPublishedItems関数
+module.exports.getPublishedItems = () => {
+    return new Promise((resolve, reject) => {
+        Item.findAll({ where: { published: true } })
+            .then(data => resolve(data))
+            .catch(() => reject('No results returned.'));
+    });
+};
+
+// getPublishedItemsByCategory関数
+module.exports.getPublishedItemsByCategory = (category) => {
+    return new Promise((resolve, reject) => {
+        Item.findAll({ where: { published: true, category: category } })
+            .then(data => resolve(data))
+            .catch(() => reject('No results returned.'));
+    });
+};
+
+// getCategories関数
+module.exports.getCategories = () => {
+    return new Promise((resolve, reject) => {
+        Category.findAll()
+            .then(data => resolve(data))
+            .catch(() => reject('No results returned.'));
+    });
+};
+
+// addCategory関数
+module.exports.addCategory = (categoryData) => {
+    return new Promise((resolve, reject) => {
+        // 空の値をnullに設定
+        for (let key in categoryData) {
+            if (categoryData[key] === "") {
+                categoryData[key] = null;
+            }
+        }
+
+        // Category.createを呼び出してカテゴリーを追加
+        Category.create(categoryData)
+            .then(() => resolve('Category successfully created.'))
+            .catch(err => reject("Unable to create category: " + err.message));
+    });
+};
+
+// deleteCategoryById関数
+module.exports.deleteCategoryById = (id) => {
+    return new Promise((resolve, reject) => {
+        // IDでカテゴリーを削除
+        Category.destroy({
+            where: {
+                id: id
+            }
+        })
+        .then(deletedCount => {
+            if (deletedCount > 0) {
+                resolve(); // カテゴリーが削除された場合は成功
+            } else {
+                reject("Category not found or unable to delete.");
+            }
+        })
+        .catch(err => {
+            reject("Unable to delete category: " + err.message); // エラーメッセージ
+        });
+    });
+};
+
+// deleteItemById関数
+module.exports.deleteItemById = (id) => {
+    return new Promise((resolve, reject) => {
+        // IDでアイテムを削除
+        Item.destroy({
+            where: { id: id }
+        })
+        .then(deletedCount => {
+            if (deletedCount > 0) {
+                resolve(); // アイテムが削除された場合は成功
+            } else {
+                reject("Item not found or unable to delete.");
+            }
+        })
+        .catch(err => {
+            reject("Unable to delete item: " + err.message); // エラーメッセージ
+        });
+    });
+};
+
